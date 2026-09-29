@@ -172,10 +172,22 @@ export class ExactGalaChainFacilitatorScheme implements SchemeNetworkFacilitator
     const dto = (payload.payload as ExactGalaChainPayload).dto;
     const result = await this.gateway.transferToken(dto);
     if (isSuccess(result)) {
+      let transaction = result.body.transactionId ?? "";
+      if (!transaction) {
+        // The public gateway currently omits the tx id on a successful submit.
+        // Re-presenting the same signed DTO is idempotent on GalaChain: it
+        // returns a conflict that names the original transaction and burns no
+        // second fee. That gives x402 callers a useful SettlementResponse.
+        const duplicate = await this.gateway.transferToken(dto);
+        transaction =
+          extractOriginalTransactionId(galaChainMessage(duplicate)) ??
+          duplicate.body.transactionId ??
+          "";
+      }
       return {
         success: true,
         payer: valid.payer,
-        transaction: result.body.transactionId ?? "",
+        transaction,
         network: requirements.network,
       };
     }
