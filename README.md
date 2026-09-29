@@ -24,6 +24,15 @@ scheme plug-in, then run the `x402-probe` attack catalogue against it.
 - `x402-galachain/exact/facilitator`: verification and settlement against the
   GalaChain REST gateway.
 
+## Tests
+
+`npm test` runs an offline suite (vitest, mocked gateway, no GALA moves):
+one rejection test per facilitator verification rule, the settle paths
+(success, tx-id reconciliation via the duplicate conflict, duplicate =
+failure, fee shortfall), price parsing, client payload shape and signing,
+and unit conversions. `npm run typecheck` covers `src/`, `harness/` and
+`test/`. End-to-end behaviour is covered by the mainnet receipts in `runs/`.
+
 ## Harness
 
 The repo carries its own demo and attack harness (moved here from the

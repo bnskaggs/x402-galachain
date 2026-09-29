@@ -27,7 +27,7 @@
     "build": "tsc -p tsconfig.json",
     "prepare": "npm run build",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.harness.json",
-    "test": "npm run typecheck",
+    "test": "vitest run",
     "demo": "tsx harness/demo.ts",
     "attack": "tsx harness/gc-attack.ts"
   },
@@ -49,6 +49,7 @@
     "@x402/fetch": "^2.27.0",
     "express": "^5.2.1",
     "tsx": "^4.23.15",
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.2",
+    "vitest": "^5.0.2"
   }
 }

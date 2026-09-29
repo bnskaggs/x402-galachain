@@ -26,9 +26,11 @@ function parseGalaAmount(value: string): string {
 export class ExactGalaChainServerScheme implements SchemeNetworkServer {
   readonly scheme = "exact";
   readonly defaultAssetTransferMethod = ASSET_TRANSFER_METHOD;
+  // Only `authorization` (verify -> resource -> settle) has been exercised on
+  // mainnet. `upfront` would work mechanically but is undeclared until tested.
   readonly paymentFlows = {
     [ASSET_TRANSFER_METHOD]: {
-      supported: ["authorization", "upfront"],
+      supported: ["authorization"],
       default: "authorization",
     },
   } as const satisfies Record<string, PaymentFlowConfig>;

@@ -116,9 +116,10 @@ POST the signed DTO unchanged to the gateway `TransferToken` endpoint.
 
 ## Payment flows
 
-`authorization` (default): verify (rules 1–10) → resource → settle.
-`upfront`: settle → resource; the settle result itself is the pre-resource
-check (DryRun omitted).
+`authorization` (default and, in this draft, the only declared flow):
+verify (rules 1–10) → resource → settle. An `upfront` flow (settle →
+resource, DryRun omitted) would work mechanically on GalaChain but has not
+been exercised, so it is not declared until it is tested.
 
 ## Error reason codes
 
