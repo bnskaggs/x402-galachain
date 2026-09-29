@@ -48,3 +48,9 @@ buyer −2 GALA (1 payment + 1 fee burned), seller +1 — no x402 SDK edits.
 Naive attack round A1–A7 run the same day; all rows matched the plumbing
 predictions, and GalaChain's `uniqueKey` conflict returned the original tx id
 on duplicates without burning a second fee.
+
+Mitigated round (same day, `npm run attack -- <id> --mitigated`): the
+five-rule guard in `harness/guard.ts` cut the round's spend from 29.55 to
+8.08 GALA — A5 and A7 to zero, A4 stopped by the budget, A1/A1b/A2 held to
+one fair payment each. Draft scheme spec:
+[`specs/scheme_exact_galachain.md`](specs/scheme_exact_galachain.md).
