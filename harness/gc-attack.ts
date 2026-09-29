@@ -11,7 +11,9 @@ import {
   GalaChainGateway,
   GALACHAIN_NETWORK,
   galaChainAddressFromPrivateKey,
+  type ExactGalaChainPayload,
 } from "../src/index.js";
+import { guarded, type SignedEntry } from "./guard.js";
 import { privateKey, type Role } from "./keys.js";
 import { withRetry } from "./retry.js";
 
@@ -21,6 +23,7 @@ const gateway = new GalaChainGateway();
 const facilitator = new ExactGalaChainFacilitatorScheme(gateway);
 const PRICE = 1_000_000n; // 0.01 GALA, 8 decimals
 const TEN_YEARS = 10 * 365 * 24 * 3600;
+const MITIGATED = process.argv.includes("--mitigated");
 
 function addr(role: Role): string {
   return galaChainAddressFromPrivateKey(privateKey(role));
@@ -96,16 +99,51 @@ async function close(server: Server) {
 function makeBuyer() {
   const client = new x402Client().register(GALACHAIN_NETWORK, new ExactGalaChainClientScheme(privateKey("BUYER")));
   client.setSpendControls({ allowedAssets: [{ network: GALACHAIN_NETWORK, asset: GALA_ASSET_ID }] });
-  const signed: string[] = [];
-  client.onAfterPaymentCreation(async ctx => {
-    signed.push(((ctx.paymentPayload.payload as { dto: { uniqueKey: string } }).dto.uniqueKey));
+  const ledger: SignedEntry[] = [];
+  const refusals: string[] = [];
+  const decide = guarded({
+    payTo: { [URL]: [addr("SELLER")] },
+    maxTimeoutSeconds: 300,
+    budgetAtomic: 3n * PRICE,
   });
-  return { fetch: wrapFetchWithPayment(fetch, client), signed };
+  if (MITIGATED) {
+    client.onBeforePaymentCreation(async ctx => {
+      const r = ctx.selectedRequirements;
+      const decision = decide(
+        {
+          origin: URL,
+          path: "/quote",
+          payTo: r.payTo,
+          amountAtomic: BigInt(r.amount),
+          maxTimeoutSeconds: typeof r.maxTimeoutSeconds === "number" ? r.maxTimeoutSeconds : 300,
+        },
+        ledger,
+      );
+      if (!decision.pay) {
+        refusals.push(decision.reason);
+        return { abort: true, reason: decision.reason };
+      }
+    });
+  }
+  client.onAfterPaymentCreation(async ctx => {
+    const payload = ctx.paymentPayload.payload as ExactGalaChainPayload;
+    ledger.push({
+      origin: URL,
+      to: payload.dto.to,
+      amountAtomic: BigInt(ctx.selectedRequirements.amount),
+      uniqueKey: payload.dto.uniqueKey,
+      dtoExpiresAt: payload.dto.dtoExpiresAt,
+      delivered: false,
+    });
+  });
+  return { fetch: wrapFetchWithPayment(fetch, client), ledger, refusals };
 }
 
 async function paidGet(buyer: ReturnType<typeof makeBuyer>, url = `${URL}/quote`) {
+  const before = buyer.ledger.length;
   try {
     const res = await buyer.fetch(url);
+    if (res.ok && buyer.ledger.length > before) buyer.ledger[buyer.ledger.length - 1].delivered = true;
     return { ok: res.ok, status: res.status, body: await res.text() };
   } catch (err) {
     return { ok: false, status: 0, error: (err as Error).message };
@@ -154,13 +192,22 @@ async function hostile(kind: "A1" | "A1b" | "A2" | "A3a" | "A4" | "A7") {
   };
 }
 
-async function a3b() {
+async function a3b(lockNonces = false) {
   const app = express();
   let handlerRuns = 0;
+  const seen = new Set<string>();
   app.get("/quote", async (req, res) => {
     const reqs = requirements(PRICE);
     const payload = readPayment(req);
     if (!payload) return send402(res, reqs);
+    if (lockNonces) {
+      const uniqueKey = (payload.payload as { dto?: { uniqueKey?: string } }).dto?.uniqueKey;
+      if (uniqueKey && seen.has(uniqueKey)) {
+        res.status(409).json({ error: "authorization already used" });
+        return;
+      }
+      if (uniqueKey) seen.add(uniqueKey);
+    }
     const verify = await facilitator.verify(payload, payload.accepted);
     if (!verify.isValid) return send402(res, reqs, String(verify.invalidReason));
     handlerRuns++;
@@ -218,7 +265,7 @@ async function run() {
     extra = { tasks, settles: h.settles };
     await close(h.server);
   } else if (attack === "A3b") {
-    extra = await a3b();
+    extra = await a3b(MITIGATED);
   } else if (attack === "A4") {
     const h = await hostile("A4");
     const tasks = [];
@@ -245,7 +292,19 @@ async function run() {
 
   await new Promise(resolve => setTimeout(resolve, 4_000));
   const after = await snapshot();
-  const record = { at: new Date().toISOString(), chain: "galachain", attack, before, after, delta: diff(before, after), signed: buyer.signed, ...extra };
+  const record = {
+    at: new Date().toISOString(),
+    chain: "galachain",
+    attack,
+    variant: MITIGATED ? "mitigated" : "naive",
+    before,
+    after,
+    delta: diff(before, after),
+    signed: buyer.ledger.map(e => e.uniqueKey),
+    delivered: buyer.ledger.filter(e => e.delivered).length,
+    refusals: buyer.refusals,
+    ...extra,
+  };
   console.log(JSON.stringify(record, null, 2));
   mkdirSync("runs", { recursive: true });
   appendFileSync("runs/galachain-attacks-2026-09-29.jsonl", JSON.stringify(record) + "\n");
