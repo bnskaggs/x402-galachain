@@ -1,0 +1,46 @@
+{
+  "name": "x402-galachain",
+  "version": "0.0.1",
+  "description": "Experimental x402 exact payment scheme for GALA on GalaChain.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./exact/client": {
+      "types": "./dist/exact/client/index.d.ts",
+      "default": "./dist/exact/client/index.js"
+    },
+    "./exact/server": {
+      "types": "./dist/exact/server/index.d.ts",
+      "default": "./dist/exact/server/index.js"
+    },
+    "./exact/facilitator": {
+      "types": "./dist/exact/facilitator/index.d.ts",
+      "default": "./dist/exact/facilitator/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run typecheck"
+  },
+  "files": [
+    "dist"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@gala-chain/api": "^3.3.0",
+    "@x402/core": "^2.27.0"
+  },
+  "peerDependencies": {
+    "@x402/core": "^2.27.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.5.2",
+    "typescript": "^5.9.2"
+  }
+}
