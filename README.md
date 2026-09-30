@@ -63,3 +63,8 @@ five-rule guard in `harness/guard.ts` cut the round's spend from 29.55 to
 8.08 GALA — A5 and A7 to zero, A4 stopped by the budget, A1/A1b/A2 held to
 one fair payment each. Draft scheme spec:
 [`specs/scheme_exact_galachain.md`](specs/scheme_exact_galachain.md).
+
+Upstream: scheme proposed in
+[x402-foundation/x402#3634](https://github.com/x402-foundation/x402/issues/3634);
+CAIP-2 namespace in
+[ChainAgnostic/namespaces#232](https://github.com/ChainAgnostic/namespaces/pull/232).
