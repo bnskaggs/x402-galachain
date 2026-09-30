@@ -65,11 +65,9 @@ export class ExactGalaChainFacilitatorScheme implements SchemeNetworkFacilitator
 
   constructor(private readonly gateway = new GalaChainGateway()) {}
 
+  // No `feePayer`: the facilitator sponsors nothing, the payer funds the chain fee.
   getExtra(_network: Network): Record<string, unknown> | undefined {
-    return {
-      feePayer: "payer",
-      assetTransferMethod: ASSET_TRANSFER_METHOD,
-    };
+    return { assetTransferMethods: [ASSET_TRANSFER_METHOD] };
   }
 
   getSigners(_network: string): string[] {
