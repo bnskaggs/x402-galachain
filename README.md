@@ -35,12 +35,16 @@ shape and signing, and unit conversions. `npm run typecheck` covers `src/`,
 `harness/` and `test/`. End-to-end behaviour is covered by the mainnet
 receipts in `runs/`.
 
-Known defect fixed 2026-09-29 (commit history): before the fix, `/verify`
-read only the outer `Status` of a `DryRun` response, which is `1` whenever
-the simulation ran, so underfunded payers passed verification and failed at
-settle. Mainnet receipts from before that commit were produced with that
-behaviour; the attack-round outcomes are unaffected because none depended on
-the dry run rejecting a payer.
+Two defects fixed 2026-09-29 (commit history). First, `/verify` read only
+the outer `Status` of a `DryRun` response, which is `1` whenever the
+simulation ran, so underfunded payers passed verification and failed at
+settle. Second, the fix for that exposed a regression: `DryRun` also enforces
+`uniqueKey`, so a dry run before settle reported a replayed payload as a
+verification error instead of the duplicate-settlement failure the spec
+requires. Settle now submits without a prior dry run and uses an unsigned
+`DryRun` only to look up the transaction id afterwards. A3a and A3b were
+re-run on mainnet after both fixes (receipts appended to `runs/`); the other
+rows were measured before the fixes and did not exercise either path.
 
 ## Harness
 

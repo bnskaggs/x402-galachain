@@ -106,6 +106,10 @@ export function dryRunErrorKey(result: GatewayResult<GalaChainDryRunResult>): st
   return result.body.Data?.response?.ErrorKey ?? galaChainErrorKey(result);
 }
 
+export function dryRunMessage(result: GatewayResult<GalaChainDryRunResult>): string {
+  return result.body.Data?.response?.Message ?? galaChainMessage(result);
+}
+
 export function extractOriginalTransactionId(message: string): string | undefined {
   const match = message.match(/transaction\s+([0-9a-f]{64})/i);
   return match?.[1];

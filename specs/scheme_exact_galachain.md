@@ -8,9 +8,9 @@ The Client signs a GalaChain `TransferTokenDto` naming `payTo` as receiver but d
 
 GalaChain is a Hyperledger Fabric-based layer 1 (TypeScript chaincode, REST gateways, no EVM, no JSON-RPC). Three chain properties shape this scheme:
 
-- **The payer funds the chain fee.** The `TransferToken` fee gate charges the *calling user* — the DTO signer — by burning GALA from their balance (`galaFeeGate` → `payFeeImmediatelyFromBalance`). The Facilitator sponsors nothing.
-- **Replay is exclusive and distinguishable.** Every submit DTO carries a client-chosen `uniqueKey`. The chain records it before running the handler; a second submission fails with `UNIQUE_TRANSACTION_CONFLICT` naming the transaction that consumed it.
-- **Failure consumes the key but nothing else.** When the handler or fee gate fails, GalaChain commits only the `uniqueKey` record and discards every other write, so a failed settlement burns no fee and moves no funds, and the same signed DTO cannot be resubmitted.
+- **The payer funds the chain fee.** The `TransferToken` fee gate charges the *calling user* — the DTO signer — from their GALA balance (`galaFeeGate` → `payFeeImmediatelyFromBalance`). The Facilitator sponsors nothing.
+- **Replay is exclusive and distinguishable.** Every submit DTO carries a client-chosen `uniqueKey`. The chain records it after validation and authentication but before the fee gate and handler; a second submission fails with `UNIQUE_TRANSACTION_CONFLICT` naming the transaction that consumed it, and an unsigned `DryRun` of the same DTO reports the same conflict.
+- **Late failure consumes the key but nothing else.** When the fee gate or handler fails, GalaChain commits only the `uniqueKey` record and discards every other write, so a failed settlement burns no fee and moves no funds, and the same signed DTO cannot be resubmitted. Failures earlier in the wrapper (DTO validation, expiry, authentication) consume nothing.
 
 This scheme defines one asset transfer method:
 
@@ -81,7 +81,7 @@ The `galachain` namespace is proposed in [ChainAgnostic/namespaces#232](https://
 
 - `amount`: integer, atomic units of `asset`. GALA has 8 decimals, so `"100000000"` is 1 GALA.
 - `asset`: the GalaChain token class key `collection|category|type|additionalKey`. GALA is `GALA|Unit|none|none`.
-- `payTo`: a GalaChain user alias. For secp256k1 users this is `eth|` followed by the EIP-55 checksummed address (no `0x`). The chain's DTO validation rejects a non-checksummed `eth|` alias, so resource servers MUST publish the checksummed form.
+- `payTo`: a GalaChain user alias. For secp256k1 users this is `eth|` followed by the EIP-55 checksummed address (no `0x`). The chain's DTO validation rejects a non-checksummed `eth|` alias, so resource servers MUST publish the checksummed form. The chain resolves `to` to a user profile the same way it resolves the payer (`resolveUserAlias`); an alias with no profile is credited as itself.
 - `maxTimeoutSeconds`: bounds `dto.dtoExpiresAt` (verification rule 9).
 
 **`extra` field definitions:**
@@ -174,15 +174,15 @@ A facilitator MUST enforce every rule below, in order, before reporting `isValid
 5. **Replay primitive present.** `dto.uniqueKey` MUST be a non-empty string (`invalid_exact_galachain_missing_unique_key`).
 6. **Destination.** `dto.to` MUST equal `requirements.payTo` (`invalid_exact_galachain_pay_to_mismatch`).
 7. **Asset.** `dto.tokenInstance` encoded as `collection|category|type|additionalKey` MUST equal `requirements.asset` and be a class this facilitator supports (`invalid_exact_galachain_asset_mismatch`); `tokenInstance.instance` MUST be `"0"` (`invalid_exact_galachain_asset_instance_mismatch`).
-8. **Amount exactness.** `dto.quantity` MUST parse as a non-negative decimal with at most `extra.decimals` fractional digits (`invalid_exact_galachain_quantity`), and its atomic value MUST equal `requirements.amount` exactly (`invalid_exact_galachain_amount_mismatch`).
+8. **Amount exactness.** `dto.quantity` MUST parse as a **positive** decimal with at most `extra.decimals` fractional digits (`invalid_exact_galachain_quantity`; the chain's own validator accepts zero, so the facilitator rejects it), and its atomic value MUST equal `requirements.amount` exactly (`invalid_exact_galachain_amount_mismatch`).
 9. **Validity window.** `dto.dtoExpiresAt` MUST be a finite number (`invalid_exact_galachain_missing_expiry`); MUST be later than now plus a safety margin of at least 1 s (`invalid_exact_galachain_expired`); `requirements.maxTimeoutSeconds` MUST be a finite number (`invalid_exact_galachain_requirements_timeout`); and `dtoExpiresAt` MUST NOT exceed now + `maxTimeoutSeconds` × 1000 + a skew allowance of at most 5 s (`invalid_exact_galachain_expiry_mismatch`). This is the client's protection against a resource server asking for an arbitrarily long-lived authorization; the facilitator enforces it because the chain does not know `maxTimeoutSeconds`.
-10. **Dry run** (`authorization` flow). The facilitator MUST call the gateway `DryRun` endpoint with `{ "method": "TransferToken", "callerPublicKey": signerPublicKey, "dto": <dto without signature> }`. GalaChain executes the method as the given identity without authentication and without committing, and returns the simulated read/write set together with the method's own result. **The outer response reports `Status: 1` whenever the dry run itself ran; the simulated call's outcome is `Data.response`**, and the write set is returned even when that outcome is an error. The facilitator MUST require `Data.response.Status === 1`. The dry run runs the fee gate and the transfer, so it fails if the payer cannot cover `amount` plus the fee. An inner `ErrorKey` of `PAYMENT_REQUIRED` MUST map to `insufficient_funds`; any other inner error maps to `invalid_exact_galachain_dry_run_failed:<ErrorKey>`. A gateway-level failure (non-2xx or outer `Status: 0`) maps the same way from the outer `ErrorKey`.
+10. **Dry run** (`authorization` flow). The facilitator MUST call the gateway `DryRun` endpoint with `{ "method": "TransferToken", "callerPublicKey": signerPublicKey, "dto": <dto without signature> }`. GalaChain executes the method as the given identity without authentication and without committing, and returns the simulated read/write set together with the method's own result. **The outer response reports `Status: 1` whenever the dry run itself ran; the simulated call's outcome is `Data.response`**, and the write set is returned even when that outcome is an error. The facilitator MUST require `Data.response.Status === 1`. The dry run executes the whole transaction wrapper except authentication — validation, expiry, `uniqueKey` enforcement, fee gate, handler — so it fails if the payer cannot cover `amount` plus the fee, and it fails with `UNIQUE_TRANSACTION_CONFLICT` if the `uniqueKey` is already consumed. An inner `ErrorKey` of `PAYMENT_REQUIRED` MUST map to `insufficient_funds`; `UNIQUE_TRANSACTION_CONFLICT` MUST map to `invalid_exact_galachain_duplicate`; any other inner error maps to `invalid_exact_galachain_dry_run_failed:<ErrorKey>`. A gateway-level failure (non-2xx or outer `Status: 0`) maps the same way from the outer `ErrorKey`.
 
 Facilitators MAY add stricter policy (allowed assets, maximum amount, per-payer limits) and MUST NOT relax the rules above.
 
 ## Phase 3: Settlement Logic
 
-The facilitator MUST re-run the verification rules, then POST `payload.dto` **unchanged** (including `signature`) to the gateway `TransferToken` endpoint. It MUST NOT modify, re-serialise with different key order, or re-sign the DTO; any change invalidates the payer's signature.
+The facilitator MUST re-run verification rules 1–9, then POST `payload.dto` **unchanged** (including `signature`) to the gateway `TransferToken` endpoint. It MUST NOT modify, re-serialise with different key order, or re-sign the DTO; any change invalidates the payer's signature. Rule 10 is not repeated at settlement: submission itself decides balance, fee and `uniqueKey`, and a dry run first would report a consumed key as a verification error instead of the settlement failure this section requires.
 
 Outcomes:
 
@@ -193,17 +193,18 @@ Outcomes:
 | 402, or `ErrorKey: PAYMENT_REQUIRED` | `success: false`, `errorReason: insufficient_funds` |
 | any other error | `success: false`, `errorReason` = the gateway `ErrorKey`, or `unexpected_settle_error` if none |
 
-**What a failed settlement leaves behind.** GalaChain records `uniqueKey` before the fee gate and handler run, and on an error result it commits *only* that record, discarding the balance, fee-burn and usage-counter writes (`GalaContract.afterTransaction`). Consequences the facilitator and client MUST account for:
+**What a failed settlement leaves behind.** The transaction wrapper runs DTO validation, the expiry check and authentication first; only then does it record `uniqueKey`, and only then run the fee gate and handler. On an error result it commits *only* the `uniqueKey` record, discarding the balance, fee and usage-counter writes (`GalaContract.afterTransaction`). Consequences the facilitator and client MUST account for:
 
-- A settlement that fails for a business reason (`PAYMENT_REQUIRED`, `INSUFFICIENT_BALANCE`, …) burns no fee and moves no funds, **but consumes the `uniqueKey`**. Resubmitting the same DTO returns 409 naming the *failed* transaction.
+- A settlement that fails in the fee gate or handler (`PAYMENT_REQUIRED`, `INSUFFICIENT_BALANCE`, …) burns no fee and moves no funds, **but consumes the `uniqueKey`**. Resubmitting the same DTO returns 409 naming the *failed* transaction.
+- A settlement that fails before the record — malformed DTO, expired `dtoExpiresAt`, bad signature — consumes nothing; the DTO could be resubmitted, though an expired one never succeeds.
 - Therefore a client MUST sign a fresh DTO (new `uniqueKey`) after any settlement failure; the facilitator MUST NOT retry a failed payload.
 - A `UNIQUE_TRANSACTION_CONFLICT` is raised before the record is written, so a duplicate submission commits nothing at all.
 
 A consumed `uniqueKey` MUST be reported as settlement failure, never success, per `scheme_exact.md`. The transaction id in the response lets the caller reconcile which earlier submission consumed it.
 
-**Transaction id on success.** At time of writing the public mainnet gateway's success response omits the transaction id. A facilitator that needs one MAY re-present the same signed DTO once: the chain rejects it with a 409 whose message names the original transaction (`… transaction <64 hex> …`), and a conflict commits nothing. This costs one extra gateway round trip and no funds. Facilitators SHOULD prefer a gateway that returns the id directly when one is available.
+**Transaction id on success.** At time of writing the public mainnet gateway's success response omits the transaction id. A facilitator that needs one SHOULD run an unsigned `DryRun` of the same DTO after the successful submit: the wrapper now finds the consumed `uniqueKey` and the inner response is `UNIQUE_TRANSACTION_CONFLICT` whose message names the transaction that consumed it (`Unique transaction key <k> is already saved for transaction <64 hex>`). This re-sends nothing signed, makes no Fabric proposal, and costs one gateway round trip. Facilitators MUST NOT re-present the signed DTO for this purpose, and SHOULD prefer a gateway that returns the id directly when one is available.
 
-If the submission succeeds but the transaction id cannot be established (gateway error or timeout on the re-present), the facilitator MAY return `success: true` with an empty `transaction`, or `settlement_pending` per the core specification, and SHOULD document which.
+If the submission succeeds but the transaction id cannot be established (gateway error or timeout on the lookup), the facilitator MAY return `success: true` with an empty `transaction`, or `settlement_pending` per the core specification, and SHOULD document which.
 
 ## Payment Flows
 
@@ -232,28 +233,28 @@ Standard v2 codes (`insufficient_funds`, `invalid_payload`, `invalid_payment_req
 | `invalid_exact_galachain_pay_to_mismatch` | 6 | `dto.to` is not `payTo` |
 | `invalid_exact_galachain_asset_mismatch` | 7 | token class is not `asset` or is unsupported |
 | `invalid_exact_galachain_asset_instance_mismatch` | 7 | `tokenInstance.instance` is not `"0"` |
-| `invalid_exact_galachain_quantity` | 8 | `dto.quantity` is malformed or has too many decimals |
+| `invalid_exact_galachain_quantity` | 8 | `dto.quantity` is malformed, zero, or has too many decimals |
 | `invalid_exact_galachain_amount_mismatch` | 8 | atomic quantity is not `amount` |
 | `invalid_exact_galachain_missing_expiry` | 9 | `dto.dtoExpiresAt` absent |
 | `invalid_exact_galachain_expired` | 9 | `dtoExpiresAt` is in the past or inside the safety margin |
 | `invalid_exact_galachain_requirements_timeout` | 9 | `maxTimeoutSeconds` is not a finite number |
 | `invalid_exact_galachain_expiry_mismatch` | 9 | `dtoExpiresAt` exceeds `maxTimeoutSeconds` |
 | `invalid_exact_galachain_dry_run_failed:<ErrorKey>` | 10 | the simulated call failed with an error other than `PAYMENT_REQUIRED` |
-| `invalid_exact_galachain_duplicate` | settle | `uniqueKey` already consumed; `transaction` names the consuming transaction |
+| `invalid_exact_galachain_duplicate` | 10 / settle | `uniqueKey` already consumed; at settle, `transaction` names the consuming transaction |
 
 ## Security Considerations
 
 1. **Facilitator safety.** The facilitator has no key and no account on the payment path. The signed DTO debits only the signer, for `amount` plus the chain fee. There is no sponsorship to abuse and no gas to drain.
 2. **Authorization scope.** The signature covers every DTO field except `multisig` and `trace` (rule 4 forbids the former; the latter is telemetry). `to`, `tokenInstance`, `quantity`, `uniqueKey` and `dtoExpiresAt` cannot be changed by the facilitator or the resource server without invalidating the signature (rule 3), and rules 6–8 pin them to the requirements. A resource server that changes its price after issuing requirements gets a payload that fails rule 8.
 3. **EIP-712 signing and unsigned-field injection.** When a wallet signs the DTO as EIP-712 typed data, only fields enumerated in `types` are hashed. `@gala-chain/api` refuses to produce or verify a typed-data signature whose `types` do not cover every DTO field (a guard added after a 2026-08-18 mainnet incident in which a signature for one DTO type was replayed into `TransferToken` with injected fields). Facilitators MUST verify with a library that implements this guard and MUST NOT hand-roll typed-data verification.
-4. **Replay.** `uniqueKey` is authoritative on chain and is consumed whether the handler succeeds or fails. A settled DTO cannot settle twice; a failed DTO cannot be retried. Nothing needs to be remembered off chain. Resource servers SHOULD still refuse to serve twice for one `transaction`.
+4. **Replay.** `uniqueKey` is authoritative on chain and is consumed once the wrapper reaches the fee gate, whether the handler then succeeds or fails. A settled DTO cannot settle twice; a DTO that failed in the fee gate or handler cannot be retried. Nothing needs to be remembered off chain. Resource servers SHOULD still refuse to serve twice for one `transaction`.
 5. **Duplicate delivery.** Resubmission is distinguishable at the gateway (409 with the consuming transaction id), so a resubmitted payload cannot cause a second success and the deduplication requirement of `scheme_exact.md` for indistinguishable methods does not apply.
 6. **Anyone holding the signed DTO can submit it.** As with any facilitator-submitted method, the payload is a bearer instrument for exactly this transfer. A resource server that receives it at `/verify` could submit it directly to the gateway and withhold the resource. The client's exposure is bounded to `amount` plus one fee per signed DTO, and by `maxTimeoutSeconds` in time. Clients SHOULD cap the `maxTimeoutSeconds` they will sign and SHOULD NOT re-sign for the same resource while an earlier authorization is unresolved.
 7. **Validity window.** The chain enforces `dtoExpiresAt` against the executing peer's clock; the facilitator enforces that it does not exceed `maxTimeoutSeconds` (rule 9). Without rule 9 a resource server could request a multi-year window and settle at leisure.
 8. **Verify/settle race.** Payer balance can change between `DryRun` and `TransferToken`. The outcome is a settlement failure (`insufficient_funds`) that burns no fee and consumes the `uniqueKey`. The facilitator loses nothing; the resource server has served a resource it will not be paid for, which is inherent to the `authorization` flow; the client signs a fresh DTO if it wants to pay.
-9. **Settlement atomicity.** Debit, credit and fee burn are written by one chaincode invocation and are committed only on a success result; on failure all three are discarded together. The `uniqueKey` record is the one write that commits either way. There is no partial transfer and no soft failure reported as success.
-10. **Payer alias resolution.** The chain resolves the recovered signer to a registered user profile; a key with no profile gets the default alias `eth|<address>`, which is what the facilitator reports as `payer`. A key registered under a legacy `client|` alias is debited under that alias. Facilitators that need the exact debited alias MAY resolve the profile through the gateway; this specification does not require it.
-11. **Fee schedule.** The `TransferToken` fee is a curator-defined `FeeCodeDefinition` and MAY step up with the payer's cumulative usage (`FeeThresholdUses`, acceleration types Additive/Multiplicative/Exponential). It was 1 GALA at the base tier on mainnet at time of writing. The dry run reports the exact fee the payer would be charged (`ErrorPayload.paymentQuantity` on `PAYMENT_REQUIRED`). Payments much smaller than the fee are fee-dominated; resource servers pricing micropayments SHOULD account for this.
+9. **Settlement atomicity.** Debit, credit and fee are written by one chaincode invocation and are committed only on a success result; on failure all three are discarded together. The `uniqueKey` record is the one write that commits on a late failure. There is no partial transfer and no soft failure reported as success.
+10. **Alias resolution.** The chain resolves the recovered signer, and `to`, to registered user profiles; an alias with no profile is used as itself, so an unregistered key's payer alias is `eth|<address>`, which is what the facilitator reports. A key registered under a legacy `client|` alias is debited under that alias. Facilitators that need the exact debited alias MAY resolve the profile through the gateway; this specification does not require it.
+11. **Fee schedule.** The `TransferToken` fee is a curator-defined `FeeCodeDefinition` and MAY step up with the payer's cumulative usage (`FeeThresholdUses`, acceleration types Additive/Multiplicative/Exponential). It is paid from the payer's GALA balance and burned unless a curator-defined split formula directs part of it to fee collectors; users holding a `FeeExemption` pay nothing. It was 1 GALA at the base tier on mainnet at time of writing. The dry run reports the exact fee the payer would be charged (`ErrorPayload.paymentQuantity` on `PAYMENT_REQUIRED`). Payments much smaller than the fee are fee-dominated; resource servers pricing micropayments SHOULD account for this.
 
 Invariants:
 
@@ -262,7 +263,7 @@ Invariants:
 | I1 | The facilitator is never debited | It holds no key and appears in no DTO field |
 | I2 | `payTo` is credited exactly `amount` of `asset` | Rules 6–8 over signed fields; one transfer per DTO |
 | I3 | Only the signer is debited, by `amount` plus the fee | Rule 4; the fee gate charges `ctx.callingUser` |
-| I4 | One `uniqueKey` settles at most once | Recorded before execution; committed on success and failure; conflict before any write |
+| I4 | One `uniqueKey` settles at most once | Recorded before the fee gate and handler; committed on success and on late failure; conflict before any write |
 | I5 | No signed payment outlives `maxTimeoutSeconds` (plus skew) | Rule 9 at verification; `dtoExpiresAt` on chain |
 | I6 | Settlement success means the transfer and fee committed together | `afterTransaction` flushes business writes only on a success result |
 
@@ -271,7 +272,7 @@ Invariants:
 - **Signing.** Use `signatures.getSignature(dto, privateKey)` and `signatures.isValid(signature, dto, publicKey)` from `@gala-chain/api` rather than reimplementing the serialisation; key ordering, BigNumber handling, `prefix` and EIP-712 handling are all part of the signed bytes.
 - **Address derivation.** `payer` is `eth|` + `signatures.getEthAddress(uncompressedHex)`; normalise other key encodings with `signatures.getNonCompactHexPublicKey` first. Compare aliases case-insensitively on the address part, but publish only checksummed forms.
 - **Quantity conversion.** `dto.quantity` is decimal token units; `amount` is atomic. Convert with `extra.decimals` using exact decimal arithmetic, and reject quantities with more fractional digits than `decimals`.
-- **Dry run is unsigned and nested.** The chain rejects a signed DTO on `DryRun` ("The dto should have no signature for dry run execution"); strip `signature` and pass the signer as `callerPublicKey`. Read the outcome from `Data.response.Status`, not from the outer `Status` and not from the presence of `writes`.
+- **Dry run is unsigned and nested.** The chain rejects a signed DTO on `DryRun` ("The dto should have no signature for dry run execution"); strip `signature` and pass the signer as `callerPublicKey`. Read the outcome from `Data.response.Status`, not from the outer `Status` and not from the presence of `writes`. Because the dry run enforces `uniqueKey`, it doubles as the transaction-id lookup after a successful submit.
 - **Success response shape.** Check `Status === 1` in the body in addition to the HTTP status.
 - **Stateless facilitator.** Because replay is on chain and the facilitator signs nothing, a facilitator for this scheme can run with no persistent state and no secrets.
 
@@ -289,19 +290,19 @@ All under `<gateway>/asset/token-contract/`:
 
 Responses are `{ "Status": 1, "Data": … }` on success and `{ "Status": 0, "error": { "ErrorKey", "Message", … } }` on failure; HTTP status mirrors the error class (402 for `PAYMENT_REQUIRED`, 409 for `UNIQUE_TRANSACTION_CONFLICT`). A `DryRun` response is `{ "Status": 1, "Data": { "reads", "writes", "deletes", "response": <GalaChainResponse> } }`.
 
-### Chain behaviour relied on (GalaChain SDK, `main` at time of writing)
+### Chain behaviour relied on (GalaChain SDK 3.2.5 and `main`)
 
 | Claim | Source |
 | --- | --- |
-| Signer recovered from signature; `signerPublicKey`/`signerAddress` in the DTO rejected as redundant when recoverable; unregistered keys get the default `eth\|` profile | `chaincode/src/contracts/authenticate.ts` |
-| `dtoExpiresAt` in ms, rejected when `< Date.now()` on the peer; `uniqueKey` recorded before `before`/handler | `chaincode/src/contracts/GalaTransaction.ts` |
+| Signer recovered from signature; `signerPublicKey`/`signerAddress` in the DTO rejected as redundant when recoverable; an alias with no profile resolves to itself | `chaincode/src/contracts/authenticate.ts` |
+| Wrapper order: validate → expiry (`dtoExpiresAt` ms, `< Date.now()` on the peer) → authenticate → authorize → record `uniqueKey` → `before` (fee gate) → handler | `chaincode/src/contracts/GalaTransaction.ts` |
 | On an error result only `UNTX` (uniqueKey) writes are flushed | `chaincode/src/contracts/GalaContract.ts` `afterTransaction` |
 | Conflict raised before the uniqueKey record is written | `chaincode/src/services/UniqueTransactionService.ts` |
-| `from` defaults to `ctx.callingUser`; foreign `from` requires an allowance | `TokenContract.TransferToken`, `chaincode/src/transfer/transferToken.ts` |
-| Fee charged to `ctx.callingUser`; curator-defined schedule with usage thresholds; paid by burn | `chaincode/src/fees/feeGateImplementations.ts`, `galaFeeGate.ts` |
+| `from` defaults to `ctx.callingUser`; `from` and `to` pass through `resolveUserAlias`; foreign `from` requires an allowance | `GalaChainTokenContract.TransferToken` (the SDK's reference contract), `chaincode/src/transfer/transferToken.ts` |
+| Fee charged to `ctx.callingUser`; curator-defined schedule with usage thresholds; burned unless a split formula exists; zero under `FeeExemption` | `chaincode/src/fees/feeGateImplementations.ts`, `galaFeeGate.ts`, `splitFeeBurnAndTransfer.ts` |
 | Signed bytes: strip `signature`/`multisig`/`trace`/`prefix`, prepend `prefix`, EIP-712 when `domain`+`types`; full-coverage guard | `@gala-chain/api` `utils/signatures/getPayloadToSign` |
 | Signature encoding `r‖s‖v`, `v ∈ {1b,1c}`, low-`s` | `@gala-chain/api` `utils/signatures/eth` |
-| `DryRun` runs unauthenticated as `callerPublicKey`, rejects signed DTOs, returns inner `response` plus read/write set | `chaincode/src/contracts/GalaContract.ts` `DryRun` |
+| `DryRun` runs the wrapper as `callerPublicKey` without authentication (so it enforces `uniqueKey`), rejects signed DTOs, returns inner `response` plus read/write set | `chaincode/src/contracts/GalaContract.ts` `DryRun` |
 
 ### Measured behaviour (GalaChain mainnet, 2026-09-29)
 
@@ -309,8 +310,8 @@ Reference implementation and receipts: [bnskaggs/x402-galachain](https://github.
 
 - End-to-end `authorization` flow through the stock `@x402/core` 2.27 plugin interfaces with no core changes: HTTP 200, transaction `9fc797fda6a98926ec974a24ca1fa6f2b5603a131a5a637f53d815d70ffff419`, payer −2 GALA (1 payment + 1 fee), payee +1 GALA.
 - Resubmitting a settled DTO: HTTP 409, `UNIQUE_TRANSACTION_CONFLICT`, message names the original transaction id, payer balance unchanged.
-- Two concurrent submissions of one DTO: exactly one settled (payer −1.01, payee +0.01 for a 0.01 GALA payment).
-- `DryRun` from an unfunded key: HTTP 200, outer `Status: 1`, `Data.response` = `PAYMENT_REQUIRED` ("burnTokens for payingUser: eth|…, quantity: 1, feeCode: TransferToken … Insufficient balance"), write set present. `DryRun` to a non-checksummed `eth|` alias: inner `DTO_VALIDATION_FAILED`.
+- Two concurrent submissions of one DTO: exactly one settled (payer −1.01, payee +0.01 for a 0.01 GALA payment). Seller double-settle: first settle succeeded with tx `505c281feaa01a7cdcf5a3d16630aa99f772d850b4849bfdcba77022b9fa61cf` (id obtained by the unsigned `DryRun` lookup), second returned `invalid_exact_galachain_duplicate` naming the same tx. Both re-run after the facilitator's dry-run handling was corrected.
+- `DryRun` from an unfunded key: HTTP 200, outer `Status: 1`, `Data.response` = `PAYMENT_REQUIRED` ("burnTokens for payingUser: eth|…, quantity: 1, feeCode: TransferToken … Insufficient balance"), write set present. `DryRun` to a non-checksummed `eth|` alias: inner `DTO_VALIDATION_FAILED`. `DryRun` of a consumed `uniqueKey` from an unrelated unfunded caller: inner `UNIQUE_TRANSACTION_CONFLICT` naming the consuming transaction, ahead of the fee gate. `DryRun` of an expired DTO: inner `EXPIRED`, nothing consumed.
 - Adversarial resource servers (take-and-run, price change, double settle, concurrent replay, pay-to swap, long validity window): every scenario resolved as this specification predicts; the naive stock client lost only what it had signed for, and a client enforcing rule 9 and its own pay-to/price pins lost nothing beyond fair payments.
 
 ### Known limitations

@@ -35,6 +35,24 @@ export const ok = (data: unknown = {}, status = 200): Scripted => ({ status, bod
 /** DryRun shapes as the mainnet gateway returns them (2026-09-29): outer Status 1 either way. */
 export const dryRunOk = (): Scripted =>
   ok({ reads: {}, writes: { "\u0000UNTX\u0000x\u0000": "{}" }, deletes: {}, response: { Status: 1, Data: {} } });
+/**
+ * DryRun of a DTO whose uniqueKey is already consumed. The wrapper enforces
+ * uniqueKey ahead of the fee gate, so the conflict is the inner response.
+ * Message text is UniqueTransactionConflictError's; captured live 2026-09-29.
+ */
+export const dryRunConflict = (uniqueKey: string, transactionId: string): Scripted =>
+  ok({
+    reads: {},
+    writes: {},
+    deletes: {},
+    response: {
+      Status: 0,
+      ErrorCode: 409,
+      ErrorKey: "UNIQUE_TRANSACTION_CONFLICT",
+      ErrorPayload: { uniqueKey, transactionId },
+      Message: `Unique transaction key ${uniqueKey} is already saved for transaction ${transactionId}`,
+    },
+  });
 export const dryRunFail = (ErrorCode: number, ErrorKey: string, Message: string): Scripted =>
   ok({
     reads: {},
