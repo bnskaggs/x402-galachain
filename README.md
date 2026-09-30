@@ -29,9 +29,18 @@ scheme plug-in, then run the `x402-probe` attack catalogue against it.
 `npm test` runs an offline suite (vitest, mocked gateway, no GALA moves):
 one rejection test per facilitator verification rule, the settle paths
 (success, tx-id reconciliation via the duplicate conflict, duplicate =
-failure, fee shortfall), price parsing, client payload shape and signing,
-and unit conversions. `npm run typecheck` covers `src/`, `harness/` and
-`test/`. End-to-end behaviour is covered by the mainnet receipts in `runs/`.
+failure, fee shortfall), the nested `DryRun` result shape the gateway
+actually returns, signer-envelope rejections, price parsing, client payload
+shape and signing, and unit conversions. `npm run typecheck` covers `src/`,
+`harness/` and `test/`. End-to-end behaviour is covered by the mainnet
+receipts in `runs/`.
+
+Known defect fixed 2026-09-29 (commit history): before the fix, `/verify`
+read only the outer `Status` of a `DryRun` response, which is `1` whenever
+the simulation ran, so underfunded payers passed verification and failed at
+settle. Mainnet receipts from before that commit were produced with that
+behaviour; the attack-round outcomes are unaffected because none depended on
+the dry run rejecting a payer.
 
 ## Harness
 

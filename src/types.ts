@@ -14,6 +14,29 @@ export interface GalaChainTransferTokenDto {
   uniqueKey: string;
   dtoExpiresAt: number;
   signature?: string;
+  // Optional ChainCallDTO envelope fields a wallet may set. The facilitator
+  // constrains them (see spec rule 4); it never sets them.
+  signerPublicKey?: string;
+  signerAddress?: string;
+  multisig?: string[];
+  prefix?: string;
+  domain?: Record<string, unknown>;
+  types?: Record<string, unknown>;
+}
+
+/** `Data` of a gateway `DryRun` response. The simulated call's own outcome is `response`. */
+export interface GalaChainDryRunResult {
+  reads?: Record<string, string>;
+  writes?: Record<string, string>;
+  deletes?: Record<string, string>;
+  response?: {
+    Status?: number;
+    Data?: unknown;
+    ErrorCode?: number;
+    ErrorKey?: string;
+    ErrorPayload?: unknown;
+    Message?: string;
+  };
 }
 
 export interface ExactGalaChainPayload extends Record<string, unknown> {

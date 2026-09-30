@@ -31,6 +31,17 @@ export function mockGateway(script: Record<string, Scripted | Scripted[]>) {
 }
 
 export const ok = (data: unknown = {}, status = 200): Scripted => ({ status, body: { Data: data, Status: 1 } });
+
+/** DryRun shapes as the mainnet gateway returns them (2026-09-29): outer Status 1 either way. */
+export const dryRunOk = (): Scripted =>
+  ok({ reads: {}, writes: { "\u0000UNTX\u0000x\u0000": "{}" }, deletes: {}, response: { Status: 1, Data: {} } });
+export const dryRunFail = (ErrorCode: number, ErrorKey: string, Message: string): Scripted =>
+  ok({
+    reads: {},
+    writes: { "\u0000GCFTU\u0000TransferToken\u0000eth|x\u0000": "{}" },
+    deletes: {},
+    response: { Status: 0, ErrorCode, ErrorKey, Message },
+  });
 export const gcError = (status: number, ErrorKey: string, Message: string, transactionId?: string): Scripted => ({
   status,
   body: { error: { ErrorCode: status, ErrorKey, Message, Status: 0 }, message: Message, transactionId },

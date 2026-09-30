@@ -5,6 +5,7 @@ import {
 } from "./constants.js";
 import type {
   GalaChainBalance,
+  GalaChainDryRunResult,
   GalaChainResponse,
   GalaChainTransferTokenDto,
   GatewayResult,
@@ -26,9 +27,12 @@ export class GalaChainGateway {
     return this.options.url ?? GALACHAIN_GATEWAY_URL;
   }
 
-  async dryRunTransfer(dto: GalaChainTransferTokenDto, callerPublicKey: string): Promise<GatewayResult> {
+  async dryRunTransfer(
+    dto: GalaChainTransferTokenDto,
+    callerPublicKey: string,
+  ): Promise<GatewayResult<GalaChainDryRunResult>> {
     const { signature: _signature, ...unsignedDto } = dto;
-    return this.post("DryRun", {
+    return this.post<GalaChainDryRunResult>("DryRun", {
       method: "TransferToken",
       callerPublicKey,
       dto: unsignedDto,
@@ -86,6 +90,20 @@ export function galaChainErrorKey(result: GatewayResult): string | undefined {
 
 export function isSuccess(result: GatewayResult): boolean {
   return result.status >= 200 && result.status < 300 && result.body.Status === 1;
+}
+
+/**
+ * A DryRun that ran reports outer `Status: 1` regardless of how the simulated
+ * call went; the simulated call's outcome is `Data.response`. Measured on
+ * mainnet 2026-09-29: an unfunded payer got HTTP 200, outer Status 1, inner
+ * `PAYMENT_REQUIRED`, and a write set for the attempted writes.
+ */
+export function isDryRunSuccess(result: GatewayResult<GalaChainDryRunResult>): boolean {
+  return isSuccess(result) && result.body.Data?.response?.Status === 1;
+}
+
+export function dryRunErrorKey(result: GatewayResult<GalaChainDryRunResult>): string | undefined {
+  return result.body.Data?.response?.ErrorKey ?? galaChainErrorKey(result);
 }
 
 export function extractOriginalTransactionId(message: string): string | undefined {

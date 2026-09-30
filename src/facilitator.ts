@@ -17,9 +17,11 @@ import {
 } from "./constants.js";
 import {
   GalaChainGateway,
+  dryRunErrorKey,
   extractOriginalTransactionId,
   galaChainErrorKey,
   galaChainMessage,
+  isDryRunSuccess,
   isSuccess,
 } from "./gateway.js";
 import type { ExactGalaChainPayload, GalaChainTransferTokenDto } from "./types.js";
@@ -96,11 +98,24 @@ export class ExactGalaChainFacilitatorScheme implements SchemeNetworkFacilitator
     }
     if (!dto.signature) return invalid("invalid_exact_galachain_payload_missing_signature");
 
-    const payer = galaChainAddressFromPublicKey(signerPublicKey);
-    if (!signatures.isValid(dto.signature, unsignedDto(dto), signerPublicKey)) {
+    // Accept compressed/uncompressed hex or base64; derive the alias from the uncompressed form.
+    let publicKeyHex: string;
+    try {
+      publicKeyHex = signatures.getNonCompactHexPublicKey(signerPublicKey);
+    } catch {
+      return invalid("invalid_exact_galachain_payload_signer_public_key");
+    }
+    const payer = galaChainAddressFromPublicKey(publicKeyHex);
+    if (!signatures.isValid(dto.signature, unsignedDto(dto), publicKeyHex)) {
       return invalid("invalid_exact_galachain_payload_signature", payer);
     }
 
+    // Single recoverable signature only. The chain rejects signerPublicKey /
+    // signerAddress as redundant when the key is recoverable, and multisig is
+    // a different authentication mode (chaincode authenticate.ts).
+    if (dto.multisig !== undefined || dto.signerAddress !== undefined || dto.signerPublicKey !== undefined) {
+      return invalid("invalid_exact_galachain_payload_envelope", payer);
+    }
     if (dto.from && !sameAddress(dto.from, payer)) {
       return invalid("invalid_exact_galachain_from_mismatch", payer);
     }
@@ -140,9 +155,9 @@ export class ExactGalaChainFacilitatorScheme implements SchemeNetworkFacilitator
     }
 
     if (paymentFlow(requirements) === "authorization") {
-      const dryRun = await this.gateway.dryRunTransfer(dto, signerPublicKey);
-      if (!isSuccess(dryRun)) {
-        const key = galaChainErrorKey(dryRun);
+      const dryRun = await this.gateway.dryRunTransfer(dto, publicKeyHex);
+      if (!isDryRunSuccess(dryRun)) {
+        const key = dryRunErrorKey(dryRun);
         if (key === "PAYMENT_REQUIRED") return invalid("insufficient_funds", payer);
         return invalid(`invalid_exact_galachain_dry_run_failed:${key ?? dryRun.status}`, payer);
       }

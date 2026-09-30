@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { ExactGalaChainFacilitatorScheme } from "../src/facilitator.js";
 import { GALACHAIN_NETWORK } from "../src/constants.js";
 import { signDto } from "../src/utils.js";
-import { attacker, dtoOf, gcError, mockGateway, ok, payer, payerKey, requirements, signedPayload } from "./helpers.js";
+import { signatures } from "@gala-chain/api";
+import { attacker, dryRunFail, dryRunOk, dtoOf, gcError, mockGateway, ok, payer, payerKey, requirements, signedPayload } from "./helpers.js";
 
 /** Re-sign a payload's dto with changed fields: the signature stays valid, only the content differs. */
 function resign(p: Awaited<ReturnType<typeof signedPayload>>, changes: Record<string, unknown>) {
@@ -19,7 +20,7 @@ function facilitatorWith(script: Parameters<typeof mockGateway>[0]) {
 
 describe("verify: happy path", () => {
   it("accepts a valid payload and names the payer", async () => {
-    const { facilitator, calls } = facilitatorWith({ DryRun: ok({ reads: {}, writes: {} }) });
+    const { facilitator, calls } = facilitatorWith({ DryRun: dryRunOk() });
     const result = await facilitator.verify(await signedPayload(), requirements());
     expect(result).toEqual({ isValid: true, payer });
     expect(calls.map(c => c.method)).toEqual(["DryRun"]);
@@ -128,25 +129,68 @@ describe("verify: expiry window", () => {
 });
 
 describe("verify: dry run", () => {
-  it("maps a fee/balance shortfall to insufficient_funds", async () => {
+  it("rejects an unfunded payer even though the gateway wraps the failure in outer Status 1 (mainnet 2026-09-29)", async () => {
     const { facilitator } = facilitatorWith({
-      DryRun: gcError(402, "PAYMENT_REQUIRED", "Payment Requiured. ... Insufficient balance"),
+      DryRun: dryRunFail(402, "PAYMENT_REQUIRED", "Payment Requiured. payImmediatelyFromBalance: burnTokens ... Insufficient balance"),
     });
     expect((await facilitator.verify(await signedPayload(), requirements())).invalidReason).toBe("insufficient_funds");
   });
 
-  it("surfaces other dry-run failures with their key", async () => {
-    const { facilitator } = facilitatorWith({ DryRun: gcError(400, "VALIDATION_FAILED", "nope") });
+  it("surfaces other simulated failures with the inner ErrorKey", async () => {
+    const { facilitator } = facilitatorWith({ DryRun: dryRunFail(400, "DTO_VALIDATION_FAILED", "nope") });
+    expect((await facilitator.verify(await signedPayload(), requirements())).invalidReason).toBe(
+      "invalid_exact_galachain_dry_run_failed:DTO_VALIDATION_FAILED",
+    );
+  });
+
+  it("does not treat a returned write set as success", async () => {
+    const { facilitator } = facilitatorWith({
+      DryRun: ok({ reads: {}, writes: { "\u0000UNTX\u0000k\u0000": "{}" }, deletes: {}, response: { Status: 0, ErrorKey: "X" } }),
+    });
+    expect((await facilitator.verify(await signedPayload(), requirements())).isValid).toBe(false);
+  });
+
+  it("still handles an outer-level gateway error", async () => {
+    const { facilitator } = facilitatorWith({ DryRun: gcError(400, "VALIDATION_FAILED", "The dto should have no signature") });
     expect((await facilitator.verify(await signedPayload(), requirements())).invalidReason).toBe(
       "invalid_exact_galachain_dry_run_failed:VALIDATION_FAILED",
     );
   });
 });
 
+describe("verify: signer envelope", () => {
+  it("accepts a compressed signerPublicKey and derives the same payer", async () => {
+    const { facilitator } = facilitatorWith({ DryRun: dryRunOk() });
+    const p = await signedPayload();
+    const compressed = signatures.normalizePublicKey(payerKey.publicKey).toString("hex");
+    (p.payload as { signerPublicKey: string }).signerPublicKey = compressed;
+    expect(await facilitator.verify(p, requirements())).toEqual({ isValid: true, payer });
+  });
+
+  it("returns a reason, not an exception, for a malformed signerPublicKey", async () => {
+    const { facilitator } = facilitatorWith({ DryRun: dryRunOk() });
+    const p = await signedPayload();
+    (p.payload as { signerPublicKey: string }).signerPublicKey = "not-a-key";
+    expect((await facilitator.verify(p, requirements())).invalidReason).toBe("invalid_exact_galachain_payload_signer_public_key");
+  });
+
+  it.each([
+    ["multisig", { multisig: [] as string[] }],
+    ["signerAddress (even the payer's own; the chain rejects it as redundant)", { signerAddress: payer }],
+    ["in-DTO signerPublicKey (even the payer's own)", { signerPublicKey: payerKey.publicKey }],
+    ["foreign signerAddress", { signerAddress: attacker }],
+  ])("rejects a DTO carrying %s", async (_label, fields) => {
+    const { facilitator } = facilitatorWith({ DryRun: dryRunOk() });
+    const p = await signedPayload();
+    (p.payload as { dto: unknown }).dto = resign(p, fields as Record<string, unknown>);
+    expect((await facilitator.verify(p, requirements())).invalidReason).toBe("invalid_exact_galachain_payload_envelope");
+  });
+});
+
 describe("settle", () => {
   it("settles and reconciles the tx id via the duplicate conflict when the gateway omits it", async () => {
     const { facilitator, calls } = facilitatorWith({
-      DryRun: ok({}),
+      DryRun: dryRunOk(),
       TransferToken: [
         ok({}, 201), // gateway success without transactionId
         gcError(409, "UNIQUE_TRANSACTION_CONFLICT", `Unique transaction key x is already saved for transaction ${TX}`, "other"),
@@ -159,7 +203,7 @@ describe("settle", () => {
 
   it("uses the gateway tx id directly when present, with a single submit", async () => {
     const { facilitator, calls } = facilitatorWith({
-      DryRun: ok({}),
+      DryRun: dryRunOk(),
       TransferToken: { status: 201, body: { Data: {}, Status: 1, transactionId: TX } },
     });
     const r = await facilitator.settle(await signedPayload(), requirements());
@@ -170,7 +214,7 @@ describe("settle", () => {
 
   it("reports a replayed payload as failure naming the original tx (exact spec: consumed primitive = failure)", async () => {
     const { facilitator } = facilitatorWith({
-      DryRun: ok({}),
+      DryRun: dryRunOk(),
       TransferToken: gcError(409, "UNIQUE_TRANSACTION_CONFLICT", `Unique transaction key x is already saved for transaction ${TX}`),
     });
     const r = await facilitator.settle(await signedPayload(), requirements());
@@ -181,7 +225,7 @@ describe("settle", () => {
 
   it("maps a fee shortfall at settle time to insufficient_funds", async () => {
     const { facilitator } = facilitatorWith({
-      DryRun: ok({}),
+      DryRun: dryRunOk(),
       TransferToken: gcError(402, "PAYMENT_REQUIRED", "Insufficient balance"),
     });
     const r = await facilitator.settle(await signedPayload(), requirements());
@@ -190,7 +234,7 @@ describe("settle", () => {
   });
 
   it("refuses to settle what verify rejects, without touching the gateway's TransferToken", async () => {
-    const { facilitator, calls } = facilitatorWith({ DryRun: ok({}), TransferToken: ok({}, 201) });
+    const { facilitator, calls } = facilitatorWith({ DryRun: dryRunOk(), TransferToken: ok({}, 201) });
     const p = await signedPayload(requirements({ payTo: attacker }));
     const r = await facilitator.settle(p, requirements());
     expect(r.success).toBe(false);
