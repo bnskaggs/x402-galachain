@@ -90,7 +90,7 @@ app.post("/pay-demo", async (req, res) => {
   }
 
   const rateLimit = checkRateLimit(req.ip ?? req.socket.remoteAddress ?? "unknown");
-  if (!rateLimit.ok) {
+  if ("retryAfterSeconds" in rateLimit) {
     res.status(429).json({ error: `Demo rate limit hit. Try again in ${rateLimit.retryAfterSeconds}s.` });
     return;
   }
