@@ -6,6 +6,17 @@ This is a lab package, not an upstream x402 SDK package. It exists to prove
 that a stock x402 client/server can carry a GalaChain payment through a custom
 scheme plug-in, then run the `x402-probe` attack catalogue against it.
 
+## Install
+
+```sh
+npm install x402-galachain @x402/core
+```
+
+Published on npm as [`x402-galachain`](https://www.npmjs.com/package/x402-galachain).
+`@x402/core` is a peer dependency. Versions below 0.1.0 track an unreviewed
+spec ([x402#3635](https://github.com/x402-foundation/x402/pull/3635)); expect
+breaking changes between patch releases until that PR is resolved.
+
 ## Shape
 
 - Network: `galachain:mainnet` (CAIP-2 namespace proposed in [ChainAgnostic/namespaces#232](https://github.com/ChainAgnostic/namespaces/pull/232)).
