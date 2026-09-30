@@ -42,6 +42,15 @@ The allowlist is the control that matters. Only `galachain:mainnet` is
 registered. `GALACHAIN_GATEWAY_URL` overrides the mainnet gateway; leave it
 unset to use the public one.
 
+Hosted instance (allowlist on, personal Vercel project, not a Gala domain):
+
+- Facilitator: `https://x402-galachain-facilitator-ten.vercel.app`
+  (`GET /supported` lists `galachain:mainnet` and no fee payer)
+- Demo seller: `https://x402-galachain-demo.vercel.app/quote` (1 GALA)
+- `cd demo && npm run buy` pays that URL from the probe buyer key, then
+  replays the same signature. The replay is rejected as a duplicate and
+  does not settle a second time.
+
 ## Shape
 
 - Network: `galachain:mainnet` (CAIP-2 namespace proposed in [ChainAgnostic/namespaces#232](https://github.com/ChainAgnostic/namespaces/pull/232)).

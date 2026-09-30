@@ -4,5 +4,5 @@
     "noEmit": true,
     "rootDir": "."
   },
-  "include": ["src/**/*.ts", "harness/**/*.ts", "test/**/*.ts", "service/**/*.ts", "api/**/*.ts"]
+  "include": ["src/**/*.ts", "harness/**/*.ts", "test/**/*.ts", "service/**/*.ts", "app.ts"]
 }
