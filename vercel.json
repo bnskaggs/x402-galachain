@@ -1,0 +1,9 @@
+{
+  "installCommand": "npm install --include=dev",
+  "rewrites": [{ "source": "/(.*)", "destination": "/api" }],
+  "functions": {
+    "api/index.ts": {
+      "maxDuration": 15
+    }
+  }
+}

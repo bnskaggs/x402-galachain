@@ -17,6 +17,31 @@ Published on npm as [`x402-galachain`](https://www.npmjs.com/package/x402-galach
 spec ([x402#3635](https://github.com/x402-foundation/x402/pull/3635)); expect
 breaking changes between patch releases until that PR is resolved.
 
+## Run the facilitator yourself
+
+The facilitator holds no key. It relays a payer-signed transfer to the public
+gateway and reads the result back.
+
+```sh
+ALLOWED_PAY_TO="eth|YourSellerAlias" npm start
+```
+
+`GET /health`, `GET /supported`, `POST /verify`, `POST /settle` on port 4021.
+With no `ALLOWED_PAY_TO`, verify and settle reject every recipient and never
+call the gateway. `ALLOW_OPEN_RELAY=1` turns that check off; the hosted
+instance does not set it.
+
+```sh
+docker build -t x402-galachain-facilitator .
+docker run -p 4021:4021 -e ALLOWED_PAY_TO="eth|YourSellerAlias" x402-galachain-facilitator
+```
+
+`/verify` and `/settle` are capped at 30 calls per IP per minute, in memory,
+per process. On more than one instance that limit is a brake, not a guarantee.
+The allowlist is the control that matters. Only `galachain:mainnet` is
+registered. `GALACHAIN_GATEWAY_URL` overrides the mainnet gateway; leave it
+unset to use the public one.
+
 ## Shape
 
 - Network: `galachain:mainnet` (CAIP-2 namespace proposed in [ChainAgnostic/namespaces#232](https://github.com/ChainAgnostic/namespaces/pull/232)).

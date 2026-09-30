@@ -35,6 +35,7 @@
     "prepare": "npm run build",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.harness.json",
     "test": "vitest run",
+    "start": "tsx service/index.ts",
     "demo": "tsx harness/demo.ts",
     "attack": "tsx harness/gc-attack.ts"
   },
