@@ -37,7 +37,8 @@
     "test": "vitest run",
     "start": "tsx service/index.ts",
     "demo": "tsx harness/demo.ts",
-    "attack": "tsx harness/gc-attack.ts"
+    "attack": "tsx harness/gc-attack.ts",
+    "new-demo-key": "tsx harness/new-key.ts"
   },
   "files": [
     "dist"
