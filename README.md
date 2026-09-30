@@ -8,7 +8,7 @@ scheme plug-in, then run the `x402-probe` attack catalogue against it.
 
 ## Shape
 
-- Network: `galachain:mainnet` (provisional CAIP-2 identifier for the probe).
+- Network: `galachain:mainnet` (CAIP-2 namespace proposed in [ChainAgnostic/namespaces#232](https://github.com/ChainAgnostic/namespaces/pull/232)).
 - Asset: `GALA|Unit|none|none`, backed by the GalaChain token class
   `{ collection: "GALA", category: "Unit", type: "none", additionalKey: "none" }`.
 - Payer signs a `TransferTokenDto`.

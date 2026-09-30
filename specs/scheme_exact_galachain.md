@@ -25,7 +25,8 @@ Family: **facilitator-submitted** (per `scheme_exact.md`).
 
 | Network | Identifier |
 |---|---|
-| GalaChain mainnet | `galachain:mainnet` (provisional; GalaChain has no registered CAIP-2 namespace) |
+| GalaChain mainnet | `galachain:mainnet` (CAIP-2 namespace registration proposed in [ChainAgnostic/namespaces#232](https://github.com/ChainAgnostic/namespaces/pull/232)) |
+| GalaChain testnet | `galachain:testnet` (same registration; not exercised by this implementation) |
 
 ## `PaymentRequirements`
 
@@ -148,8 +149,9 @@ been exercised, so it is not declared until it is tested.
 - Single asset (GALA) and single network id in this draft.
 - The payer must hold GALA for the burn fee on top of the payment; at a
   1 GALA fee, micropayments below ~$0.01 are fee-dominated.
-- The provisional `galachain:mainnet` identifier needs a real CAIP-2
-  registration before any upstream submission.
+- The `galachain` CAIP-2 namespace is proposed, not yet accepted
+  ([ChainAgnostic/namespaces#232](https://github.com/ChainAgnostic/namespaces/pull/232)).
+  The identifier could change if the editors ask for a different form.
 - The success-response transaction-id gap is a gateway behavior, not a
   chain property; the duplicate-re-present workaround costs one extra
   gateway round-trip.
