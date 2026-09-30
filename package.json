@@ -2,6 +2,13 @@
   "name": "x402-galachain",
   "version": "0.0.1",
   "description": "Experimental x402 exact payment scheme for GALA on GalaChain.",
+  "keywords": ["x402", "galachain", "gala", "payments", "facilitator"],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bnskaggs/x402-galachain.git"
+  },
+  "homepage": "https://github.com/bnskaggs/x402-galachain#readme",
+  "bugs": "https://github.com/bnskaggs/x402-galachain/issues",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
