@@ -68,6 +68,49 @@ Hosted instance (allowlist on, personal Vercel project, not a Gala domain):
   enhancer.
 - `x402-galachain/exact/facilitator`: verification and settlement against the
   GalaChain REST gateway.
+- `x402-galachain` (root): everything above plus the session helpers below.
+
+## Sessions
+
+GalaChain burns 1 GALA from the payer on every transaction, whatever the
+amount moved. Billing a 0.1 GALA read per call therefore costs the payer
+1.1 GALA. The practical shape for a data seller is "pay once, read for a
+window": one x402 payment buys a session token, and reads inside the window
+carry the token instead of a payment.
+
+The root export has the pieces, framework-agnostic and stateless:
+
+```ts
+import {
+  bearerToken,
+  issueSessionToken,
+  payerFromExactPayload,
+  verifySessionToken,
+} from "x402-galachain";
+import { decodePaymentSignatureHeader } from "@x402/core/http";
+
+// In the x402-protected "buy a session" handler (runs after verify):
+const payment = decodePaymentSignatureHeader(req.headers["payment-signature"]);
+const payer = payerFromExactPayload(payment.payload as ExactGalaChainPayload);
+const token = issueSessionToken(
+  { payer, product: "wallet-history", exp: Math.floor(Date.now() / 1000) + 86_400 },
+  process.env.SESSION_SECRET!,
+);
+
+// In the data handler:
+const result = verifySessionToken(bearerToken(req.headers.authorization) ?? "", {
+  secret: process.env.SESSION_SECRET!,
+  product: "wallet-history",
+});
+if (!result.ok) return res.status(401).json({ error: result.reason });
+// result.claims.payer is the only address this session may read for
+// payer-scoped products: the payment is the authentication.
+```
+
+Tokens are `base64url(claims).base64url(HMAC-SHA256)`; any replica holding
+the secret (≥ 32 bytes) verifies them, there is no store, and the TTL is the
+only revocation. The secret is a seller-side HMAC key, never a chain key: if
+it leaks, the paid tier is readable for free and nothing else happens.
 
 ## Tests
 
@@ -76,7 +119,8 @@ one rejection test per facilitator verification rule, the settle paths
 (success, tx-id reconciliation via the duplicate conflict, duplicate =
 failure, fee shortfall), the nested `DryRun` result shape the gateway
 actually returns, signer-envelope rejections, price parsing, client payload
-shape and signing, and unit conversions. `npm run typecheck` covers `src/`,
+shape and signing, unit conversions, and the session tokens (round-trip,
+tamper, expiry boundary, product pinning, payer derivation). `npm run typecheck` covers `src/`,
 `harness/` and `test/`. End-to-end behaviour is covered by the mainnet
 receipts in `runs/`.
 

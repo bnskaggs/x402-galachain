@@ -1,6 +1,6 @@
 {
   "name": "x402-galachain",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Experimental x402 exact payment scheme for GALA on GalaChain.",
   "keywords": ["x402", "galachain", "gala", "payments", "facilitator"],
   "repository": {
