@@ -19,6 +19,12 @@ function env(): Record<string, string> {
   return cache;
 }
 
+export function secret(name: string): string {
+  const value = env()[name];
+  if (!value) throw new Error(`${name} not set in ${WALLET_ENV_PATH}`);
+  return value;
+}
+
 export function privateKey(role: Role): string {
   const value = env()[`${role}_PRIVATE_KEY`];
   if (!value) throw new Error(`${role}_PRIVATE_KEY not set in ${WALLET_ENV_PATH}`);

@@ -2,7 +2,13 @@
   "name": "x402-galachain",
   "version": "0.1.0",
   "description": "Experimental x402 exact payment scheme for GALA on GalaChain.",
-  "keywords": ["x402", "galachain", "gala", "payments", "facilitator"],
+  "keywords": [
+    "x402",
+    "galachain",
+    "gala",
+    "payments",
+    "facilitator"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/bnskaggs/x402-galachain.git"
@@ -52,10 +58,12 @@
     "@x402/core": "^2.27.0"
   },
   "devDependencies": {
+    "@solana/kit": "^5.5.1",
     "@types/express": "^5.0.6",
     "@types/node": "^24.5.2",
     "@x402/express": "^2.27.0",
     "@x402/fetch": "^2.27.0",
+    "@x402/svm": "^2.28.0",
     "express": "^5.2.1",
     "tsx": "^4.23.15",
     "typescript": "^5.9.2",
