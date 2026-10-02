@@ -62,6 +62,8 @@ const session = (await res.json().catch(() => ({}))) as Record<string, any>;
 const header = res.headers.get("PAYMENT-RESPONSE");
 const settlement = header ? decodePaymentResponseHeader(header) : undefined;
 console.log(`session status=${res.status} tx=${settlement?.transaction ?? "-"} payer=${session.payer ?? "-"} error=${session.error ?? "-"}`);
+const rejected = res.status === 402 ? res.headers.get("PAYMENT-REQUIRED") : null;
+if (rejected) console.log(`rejected: ${decodePaymentRequiredHeader(rejected).error ?? "(no reason given)"}`);
 
 const stamp = new Date().toISOString().replace(/[:.]/g, "-");
 const outDir = join(process.env.X402_PURCHASES_DIR ?? join(homedir(), "x402-purchases"), `${stamp}-solana`);

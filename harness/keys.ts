@@ -14,7 +14,10 @@ function env(): Record<string, string> {
     readFileSync(WALLET_ENV_PATH, "utf8")
       .split(/\r?\n/)
       .filter(line => line && !line.startsWith("#"))
-      .map(line => line.split("=") as [string, string]),
+      .map(line => {
+        const at = line.indexOf("=");
+        return [line.slice(0, at).trim(), line.slice(at + 1).trim()] as [string, string];
+      }),
   );
   return cache;
 }
