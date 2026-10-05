@@ -6,3 +6,5 @@ dist/
 
 .vercel
 .env*
+
+runs/leaderboard-acceptance.jsonl
