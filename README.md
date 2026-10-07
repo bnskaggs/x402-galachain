@@ -170,3 +170,20 @@ Upstream: scheme proposed in
 [x402-foundation/x402#3634](https://github.com/x402-foundation/x402/issues/3634);
 CAIP-2 namespace in
 [ChainAgnostic/namespaces#232](https://github.com/ChainAgnostic/namespaces/pull/232).
+
+## Releasing
+
+Releases from 0.1.1 on are published by GitHub Actions
+([`.github/workflows/publish.yml`](.github/workflows/publish.yml)) with npm
+provenance, using npm trusted publishing, so no npm token is stored anywhere.
+Bump `version` in `package.json`, commit, then push a signed tag that matches
+it:
+
+```sh
+git tag -s v0.1.1 -m "v0.1.1"
+git push origin v0.1.1
+```
+
+The workflow refuses a tag that doesn't match `package.json`, and runs the
+tests before publishing. 0.0.1 and 0.1.0 were published by hand; their tags
+are signed but they carry no provenance.
